@@ -19,3 +19,6 @@ ipykernel>=6.0
 # Utilities
 tqdm>=4.65        # progress bars for long training loops
 joblib>=1.3       # model saving (already in sklearn, but good to pin)
+
+#for ECE 
+scipy>=1.11
