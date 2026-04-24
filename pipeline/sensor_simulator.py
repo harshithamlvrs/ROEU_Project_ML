@@ -1,3 +1,8 @@
+# This script simulates a real-time sensor data stream for a single battery cell, 
+# feeding it into the prediction pipeline and printing the results. 
+# It includes a warmup period to allow the RUL predictions to stabilize before triggering any alerts. 
+# The sensor readings are generated with some noise to mimic real-world conditions.
+
 from collections import deque
 import time
 

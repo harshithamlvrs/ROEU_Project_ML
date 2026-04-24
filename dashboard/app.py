@@ -38,6 +38,13 @@ df, dcir_df = load_data()
 FEATURES = ['Re', 'Rct', 'total_impedance', 'capacity_fade',
             'cumulative_fade', 'ambient_temperature', 'gas_ppm', 'smoke_density']
 
+
+def model_features(model, default_features):
+    names = getattr(model, 'feature_names_in_', None)
+    if names is not None and len(names) > 0:
+        return list(names)
+    return list(default_features)
+
 TIER_CFG = {
     'long':  dict(color='#059669', cls='teal',  icon='✅', label='HEALTHY',
                   msg='Battery health is nominal. All parameters within safe operating range.'),
@@ -285,7 +292,6 @@ st.sidebar.markdown("""
 """, unsafe_allow_html=True)
 
 input_mode = st.sidebar.radio('Input method', ['Slider', 'Manual Entry'], horizontal=True)
-cell = st.sidebar.selectbox('Battery cell (trend charts)', df['battery_id'].unique())
 st.sidebar.markdown("<hr style='border-color:#e2e8f0;margin:.75rem 0;'>", unsafe_allow_html=True)
 
 elec_exp = st.sidebar.expander('⚗️  Electrochemical', expanded=True)
@@ -303,10 +309,49 @@ smoke =     pick_value(env_exp, 'Smoke density',    0.0, 0.3, 0.05, 0.001,'smoke
 
 
 # ── Prediction ────────────────────────────────────────────────────────────────
-row   = pd.DataFrame([[Re, Rct, Re+Rct, c_f, c_cum, temp, gas, smoke]], columns=FEATURES)
-row_s = pd.DataFrame(scaler.transform(row), columns=FEATURES)
-tier  = le.inverse_transform(clf.predict(row_s))[0]
-rul   = max(0, round(reg.predict(row_s)[0]))
+feature_values = {
+    'Re': Re,
+    'Rct': Rct,
+    'total_impedance': Re + Rct,
+    'capacity_fade': c_f,
+    'cumulative_fade': c_cum,
+    'ambient_temperature': temp,
+    'gas_ppm': gas,
+    'smoke_density': smoke,
+}
+
+# Build a full raw feature row first; then scale only the subset the scaler knows.
+row_raw = pd.DataFrame([[feature_values[f] for f in FEATURES]], columns=FEATURES)
+row_model = row_raw.copy()
+
+scaler_features = model_features(scaler, FEATURES)
+missing_scaler = [f for f in scaler_features if f not in row_model.columns]
+if missing_scaler:
+    st.error(f'Scaler expects unsupported features: {missing_scaler}')
+    st.stop()
+
+scaled_subset = pd.DataFrame(
+    scaler.transform(row_model[scaler_features]),
+    columns=scaler_features,
+    index=row_model.index,
+)
+for feature_name in scaler_features:
+    row_model[feature_name] = scaled_subset[feature_name]
+
+clf_features = model_features(clf, FEATURES)
+reg_features = model_features(reg, FEATURES)
+
+missing_clf = [f for f in clf_features if f not in row_model.columns]
+missing_reg = [f for f in reg_features if f not in row_model.columns]
+if missing_clf or missing_reg:
+    st.error(
+        'Model expects unsupported features: '
+        f'classifier={missing_clf}, regressor={missing_reg}'
+    )
+    st.stop()
+
+tier = le.inverse_transform(clf.predict(row_model[clf_features]))[0]
+rul = max(0, round(reg.predict(row_model[reg_features])[0]))
 tc    = TIER_CFG[tier]
 
 
@@ -413,115 +458,3 @@ st.markdown(f"""
   <div class="schip"><div class="schip-lbl">Smoke Density</div><div class="schip-val">{smoke:.3f}</div></div>
 </div>
 """, unsafe_allow_html=True)
-
-
-# ── Section 2 · Historical Trend Analysis ─────────────────────────────────────
-st.markdown("<hr class='sdivider'>", unsafe_allow_html=True)
-st.markdown(f"""
-<div class="sec-hdr">
-  <div class="sec-icon" style="background:#fdf4ff;">📈</div>
-  <div>
-    <p class="sec-title">Historical Trend Analysis</p>
-    <p class="sec-sub">Long-term degradation trends for cell <strong>{cell}</strong></p>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-tab_soh, tab_dcir = st.tabs(['🔋  Battery SoH', '⚡  DCIR Resistance'])
-
-with tab_soh:
-    cell_df = df[df['battery_id'] == cell].sort_values('test_id')
-    soh_min = max(0,   cell_df['SoH'].min() - 3)
-    soh_max = min(105, cell_df['SoH'].max() + 2)
-
-    fig_soh = go.Figure()
-
-    # Coloured background zones
-    fig_soh.add_hrect(y0=90,      y1=soh_max, fillcolor='rgba(16,185,129,.07)',  line_width=0)
-    fig_soh.add_hrect(y0=80,      y1=90,      fillcolor='rgba(245,158,11,.09)',  line_width=0)
-    fig_soh.add_hrect(y0=soh_min, y1=80,      fillcolor='rgba(220,38,38,.07)',   line_width=0)
-
-    fig_soh.add_trace(go.Scatter(
-        x=cell_df['test_id'], y=cell_df['SoH'],
-        mode='lines+markers',
-        line=dict(color='#0f766e', width=2.5),
-        marker=dict(size=4, color='#0f766e', opacity=0.65),
-        name='SoH',
-        hovertemplate='<b>Cycle %{x}</b><br>SoH: %{y:.2f}%<extra></extra>',
-    ))
-
-    fig_soh.add_hline(y=90, line_dash='dot', line_color='#f59e0b', line_width=1.8,
-                      annotation_text=' 90% early warning', annotation_position='bottom right',
-                      annotation_font=dict(size=11, color='#b45309'))
-    fig_soh.add_hline(y=80, line_dash='dot', line_color='#dc2626', line_width=1.8,
-                      annotation_text=' 80% critical',      annotation_position='bottom right',
-                      annotation_font=dict(size=11, color='#991b1b'))
-
-    fig_soh.update_layout(
-        height=395,
-        margin=dict(l=5, r=5, t=20, b=5),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(248,250,252,1)',
-        xaxis=dict(title='Cycle', showgrid=True, gridcolor='#e2e8f0', zeroline=False,
-                   title_font=dict(color='#374151'), tickfont=dict(color='#374151')),
-        yaxis=dict(title='State of Health (%)', showgrid=True, gridcolor='#e2e8f0',
-                   range=[soh_min, soh_max],
-                   title_font=dict(color='#374151'), tickfont=dict(color='#374151')),
-        font=dict(family='Inter, sans-serif', color='#1e293b', size=12),
-        hovermode='x unified',
-        showlegend=False,
-    )
-    st.plotly_chart(fig_soh, use_container_width=True)
-    st.markdown(
-        f'<p style="color:#1e293b;font-size:.88rem;margin-top:-.25rem;">'
-        f'<strong>Cell {cell}</strong> · {len(cell_df)} cycles recorded. &nbsp;'
-        f'🟢 Healthy &gt;90% &nbsp;·&nbsp; 🟡 Warning 80–90% &nbsp;·&nbsp; 🔴 Critical &lt;80%</p>',
-        unsafe_allow_html=True,
-    )
-
-with tab_dcir:
-    if dcir_df.empty:
-        st.info('DCIR data not found. Run the ECE notebook export step to generate `data/dcir_all_cells.csv`.')
-    else:
-        dcir_cells  = sorted(dcir_df['cell'].astype(str).unique())
-        default_sel = str(cell) if str(cell) in dcir_cells else dcir_cells[0]
-        dcir_cell   = st.selectbox('Cell', dcir_cells,
-                                   index=dcir_cells.index(default_sel), key='dcir_sel')
-
-        dcir_cd = (dcir_df[dcir_df['cell'].astype(str) == str(dcir_cell)]
-                   .sort_values('cycle').copy())
-        dcir_cd['dcir_ma'] = dcir_cd['dcir'].rolling(5, min_periods=1).mean()
-
-        fig_d = go.Figure()
-        fig_d.add_trace(go.Scatter(
-            x=dcir_cd['cycle'], y=dcir_cd['dcir'],
-            mode='lines', line=dict(color='rgba(211,84,0,.30)', width=1.5),
-            name='Raw DCIR',
-            hovertemplate='<b>Cycle %{x}</b><br>DCIR: %{y:.5f} Ω<extra></extra>',
-        ))
-        fig_d.add_trace(go.Scatter(
-            x=dcir_cd['cycle'], y=dcir_cd['dcir_ma'],
-            mode='lines', line=dict(color='#d35400', width=2.5),
-            name='5-cycle avg',
-            hovertemplate='<b>Cycle %{x}</b><br>Avg: %{y:.5f} Ω<extra></extra>',
-        ))
-        fig_d.update_layout(
-            height=395,
-            margin=dict(l=5, r=5, t=20, b=5),
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(248,250,252,1)',
-            xaxis=dict(title='Cycle', showgrid=True, gridcolor='#e2e8f0', zeroline=False,
-                       title_font=dict(color='#374151'), tickfont=dict(color='#374151')),
-            yaxis=dict(title='DCIR (Ω)', showgrid=True, gridcolor='#e2e8f0',
-                       title_font=dict(color='#374151'), tickfont=dict(color='#374151')),
-            legend=dict(orientation='h', yanchor='bottom', y=1.02, x=0,
-                        font=dict(color='#374151')),
-            font=dict(family='Inter, sans-serif', color='#1e293b', size=12),
-            hovermode='x unified',
-        )
-        st.plotly_chart(fig_d, use_container_width=True)
-        st.caption(
-            f'**Cell {dcir_cell}** · DC internal resistance over cycles.  '
-            f'Rising DCIR is an early indicator of electrolyte degradation.  '
-            f'Faded line: raw values · Solid line: 5-cycle rolling average.'
-        )
