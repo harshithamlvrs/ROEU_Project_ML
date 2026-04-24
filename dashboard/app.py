@@ -298,15 +298,14 @@ elec_exp = st.sidebar.expander('⚗️  Electrochemical', expanded=True)
 Re  = pick_value(elec_exp, 'Re — electrolyte resistance (Ω)', 0.04, 0.20,  0.07,  0.001, 're',   input_mode)
 Rct = pick_value(elec_exp, 'Rct — charge transfer (Ω)',       0.05, 0.40,  0.15,  0.001, 'rct',  input_mode)
 
-cap_exp = st.sidebar.expander('🔋  Capacity', expanded=True)
-c_f   = pick_value(cap_exp, 'Capacity fade (Ah/cycle)', -0.05, 0.0,  -0.005, 0.001, 'cf',   input_mode)
-c_cum = pick_value(cap_exp, 'Cumulative fade (Ah)',       0.0,  0.5,   0.1,   0.001, 'ccum', input_mode)
-
 env_exp = st.sidebar.expander('🌡️  Environmental & Safety', expanded=True)
 temp  = int(pick_value(env_exp, 'Temperature (°C)', 0,   60,  24,  1,     'temp',  input_mode))
 gas   =     pick_value(env_exp, 'Gas level (ppm)',  150, 800, 220, 1,     'gas',   input_mode)
 smoke =     pick_value(env_exp, 'Smoke density',    0.0, 0.3, 0.05, 0.001,'smoke', input_mode)
 
+cap_exp = st.sidebar.expander('🔋  Capacity', expanded=True)
+c_f   = pick_value(cap_exp, 'Capacity fade (Ah/cycle)', -0.05, 0.0,  -0.005, 0.001, 'cf',   input_mode)
+c_cum = pick_value(cap_exp, 'Cumulative fade (Ah)',       0.0,  0.5,   0.1,   0.001, 'ccum', input_mode)
 
 # ── Prediction ────────────────────────────────────────────────────────────────
 feature_values = {

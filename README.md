@@ -31,3 +31,5 @@ Battery_Data_Cleaned.csv (raw Kaggle data)
     1. python -m pip install -r requirements.txt
     2. streamlit run app.py
 
+# Usage of AI
+AI was used throughout the coding process as a learning and debugging tool. All architectural and methodology decisions were made by me, with AI assisting in resolving syntax errors. 
